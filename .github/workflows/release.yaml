@@ -6,17 +6,18 @@ on:
 
 # Because variables are not exported, they are not visible by child processes, e.g. make
 env:
-  version: ${{ github.ref_name }}
   registry: ghcr.io
+  registry_username: ${{ github.actor }}
+  registry_password: ${{ secrets.GITHUB_TOKEN }}
   # The repository follows the naming convention of other Cluster API providers.
   repository: mesosphere/cluster-api-vcd-controller
+  version: ${{ github.ref_name }}
 
 jobs:
   release:
     name: Release
     runs-on:
-      - self-hosted
-      - small
+      - ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - name: Setup Go
@@ -28,17 +29,44 @@ jobs:
         uses: docker/login-action@v2
         with:
           registry: ${{ env.registry }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ env.registry_username }}
+          password: ${{ env.registry_password }}
       - name: Generate container image
+        # Note: We set make variables using positional arguments (to the right of the make command), not environment
+        # variables (to the left of the make command). While make converts environment variables to make variables, the
+        # conversion is not straightforward. For example, conditional assignments are not overriden by environment
+        # variables.
         run: |
           make generate-capvcd-image \
             REGISTRY=${{ env.registry }} \
             CAPVCD_IMG=${{ env.repository }} \
             VERSION=${{ env.version }}
       - name: Push container image to container registry
+        # See note on make variables, above.
         run: |
           make push-capvcd-image \
             REGISTRY=${{ env.registry }} \
             CAPVCD_IMG=${{ env.repository }} \
             VERSION=${{ env.version }}
+      - name: Generate GitHub release artifacts
+        # See note on make variables, above.
+        #
+        # We use our own Makefile to allow us to change the image in the manifest.
+        run: |
+          make -f d2iq.Makefile release-manifests \
+            REGISTRY=${{ env.registry }} \
+            CAPVCD_IMG=${{ env.repository }} \
+            VERSION=${{ env.version }}
+      - name: Create (draft) GitHub release
+        run: |
+          gh release create ${{ env.version }} \
+            --title ${{ env.version }} \
+            --draft
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload GitHub release artifacts
+        run: |
+          gh release upload ${{ env.version }} \
+            templates/infrastructure-components.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
