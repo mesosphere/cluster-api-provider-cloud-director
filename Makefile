@@ -99,6 +99,10 @@ lint: lint-deps golangci-lint gosec shellcheck ## Run golangci-lint, gosec, shel
 lint-fix: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --fix
 
+build-within-docker: vendor
+	mkdir -p /build/cluster-api-provider-cloud-director
+	CGO_ENABLED=0 go build -ldflags "-X github.com/vmware/$(CAPVCD_IMG)/version.Version=${VERSION}" -o /build/vcloud/cluster-api-provider-cloud-director main.go
+
 .PHONY: manifests
 manifests: controller-gen ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
