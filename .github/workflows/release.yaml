@@ -67,6 +67,7 @@ jobs:
       - name: Upload GitHub release artifacts
         run: |
           gh release upload ${{ env.version }} \
+            metadata.yaml \
             templates/infrastructure-components.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
