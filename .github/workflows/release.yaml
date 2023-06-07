@@ -17,6 +17,7 @@ jobs:
   release:
     name: Release
     runs-on:
+      # For a list of pre-installed software, see https://github.com/actions/runner-images/blob/main/images/linux/Ubuntu2204-Readme.md
       - ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -31,29 +32,22 @@ jobs:
           registry: ${{ env.registry }}
           username: ${{ env.registry_username }}
           password: ${{ env.registry_password }}
-      - name: Generate container image
+      - name: Build multi-arch container image, and push to container registry
         # Note: We set make variables using positional arguments (to the right of the make command), not environment
         # variables (to the left of the make command). While make converts environment variables to make variables, the
         # conversion is not straightforward. For example, conditional assignments are not overriden by environment
         # variables.
         run: |
-          make generate-capvcd-image \
-            REGISTRY=${{ env.registry }} \
-            CAPVCD_IMG=${{ env.repository }} \
-            VERSION=${{ env.version }}
-      - name: Push container image to container registry
-        # See note on make variables, above.
-        run: |
           make push-capvcd-image \
+            --makefile d2iq.Makefile \
             REGISTRY=${{ env.registry }} \
             CAPVCD_IMG=${{ env.repository }} \
             VERSION=${{ env.version }}
       - name: Generate GitHub release artifacts
         # See note on make variables, above.
-        #
-        # We use our own Makefile to allow us to change the image in the manifest.
         run: |
-          make -f d2iq.Makefile release-manifests \
+          make release-manifests \
+            --makefile d2iq.Makefile
             REGISTRY=${{ env.registry }} \
             CAPVCD_IMG=${{ env.repository }} \
             VERSION=${{ env.version }}
