@@ -31,18 +31,11 @@ jobs:
           registry: ${{ env.registry }}
           username: ${{ env.registry_username }}
           password: ${{ env.registry_password }}
-      - name: Generate container image
+      - name: Push container image to container registry
         # Note: We set make variables using positional arguments (to the right of the make command), not environment
         # variables (to the left of the make command). While make converts environment variables to make variables, the
         # conversion is not straightforward. For example, conditional assignments are not overriden by environment
         # variables.
-        run: |
-          make generate-capvcd-image \
-            REGISTRY=${{ env.registry }} \
-            CAPVCD_IMG=${{ env.repository }} \
-            VERSION=${{ env.version }}
-      - name: Push container image to container registry
-        # See note on make variables, above.
         run: |
           make push-capvcd-image \
             REGISTRY=${{ env.registry }} \

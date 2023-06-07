@@ -12,6 +12,9 @@ GITCOMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
 GITROOT := $(shell git rev-parse --show-toplevel)
 GO_CODE := $(shell ls go.mod go.sum **/*.go)
 
+GOOS := $(shell go env GOOS)
+GOARCH := $(shell go env GOARCH)
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -106,12 +109,12 @@ build-within-docker: vendor
 	mkdir -p /build/cluster-api-provider-cloud-director
 	CGO_ENABLED=0 go build -ldflags "-X github.com/vmware/$(CAPVCD_IMG)/version.Version=${VERSION}" -o /build/vcloud/cluster-api-provider-cloud-director main.go
 
-generate-capvcd-image: generate fmt vet vendor 
-	docker build -f Dockerfile . -t $(CAPVCD_IMG):$(VERSION) --build-arg VERSION=$(VERSION)
+generate-capvcd-image: generate fmt vet vendor
+	docker buildx build --platform linux/$(GOARCH) --load -f Dockerfile . -t $(CAPVCD_IMG):$(VERSION) --build-arg VERSION=$(VERSION)
 	docker tag $(CAPVCD_IMG):$(VERSION) $(REGISTRY)/$(CAPVCD_IMG):$(VERSION)
 
-push-capvcd-image:
-	docker push $(REGISTRY)/$(CAPVCD_IMG):$(VERSION)
+push-capvcd-image: generate fmt vet vendor
+	docker buildx build --platform linux/amd64,linux/arm64 --push $(REGISTRY)/$(CAPVCD_IMG):$(VERSION)
 
 generate-capvcd-artifact-image:
 	sed -e "s/__VERSION__/$(VERSION)/g" config/manager/manager.yaml.template > config/manager/manager.yaml
