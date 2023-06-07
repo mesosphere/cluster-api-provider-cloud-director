@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Build the manager binary
 FROM golang:1.19 as builder
 
@@ -11,6 +13,7 @@ ADD . /go/src/github.com/vmware/cluster-api-provider-cloud-director
 WORKDIR /go/src/github.com/vmware/cluster-api-provider-cloud-director
 
 ENV GOPATH /go
+ENV GOARCH $TARGETARCH
 ARG VERSION
 RUN make build-within-docker VERSION=$VERSION && \
     chmod +x /build/vcloud/cluster-api-provider-cloud-director
