@@ -13,11 +13,12 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"sigs.k8s.io/yaml"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/go-logr/logr"
