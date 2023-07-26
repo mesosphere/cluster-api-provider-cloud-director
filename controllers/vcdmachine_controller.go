@@ -18,10 +18,9 @@ import (
 	"text/template"
 	"time"
 
-	"sigs.k8s.io/yaml"
-
 	"github.com/Masterminds/sprig/v3"
 	"github.com/go-logr/logr"
+	"gopkg.in/yaml.v2"
 
 	"github.com/pkg/errors"
 	cpiutil "github.com/vmware/cloud-provider-for-cloud-director/pkg/util"
@@ -963,6 +962,12 @@ func (r *VCDMachineReconciler) reconcileVMNetworks(vdcManager *vcdsdk.VdcManager
 			return errors.Wrapf(err, "Error ensuring network [%s] is attached to vApp", ovdcNetwork)
 		}
 
+		desiredNetworkConnection := getNetworkConnection(connections, ovdcNetwork)
+		if desiredNetworkConnection.IPAddressAllocationMode == "POOL" {
+			desiredNetworkConnection.IPAddressAllocationMode = "DHCP"
+			desiredNetworkConnection.IPAddress = ""
+			desiredNetworkConnection.NeedsCustomization = true
+		}
 		desiredConnectionArray[index] = getNetworkConnection(connections, ovdcNetwork)
 	}
 
@@ -1465,25 +1470,25 @@ func MergeJinjaToCloudInitScript(cloudInitConfig CloudInitScriptInput, jinjaConf
 
 	// handle runcmd before parsing vcd cloud init yaml all to simplify things
 	cloudInitModified := ""
-	jinjaRunCmd, ok := jinja["runcmd"]
-	if ok {
-		jinjaLines, ok := jinjaRunCmd.([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("expected []interface{}, found [%T] for jinja runcmd [%v]",
-				jinjaRunCmd, jinjaRunCmd)
-		}
+	// jinjaRunCmd, ok := jinja["runcmd"]
+	// if ok {
+	// 	jinjaLines, ok := jinjaRunCmd.([]interface{})
+	// 	if !ok {
+	// 		return nil, fmt.Errorf("expected []interface{}, found [%T] for jinja runcmd [%v]",
+	// 			jinjaRunCmd, jinjaRunCmd)
+	// 	}
 
-		formattedJinjaCmd := "\n"
-		indent := strings.Repeat(" ", 4)
-		for _, jinjaLine := range jinjaLines {
-			jinjaLineStr, ok := jinjaLine.(string)
-			if !ok {
-				return nil, fmt.Errorf("unable to convert [%#v] to string", jinjaLineStr)
-			}
-			formattedJinjaCmd += indent + jinjaLineStr + "\n"
-		}
-		cloudInitConfig.BootstrapRunCmd = strings.Trim(strings.Trim(formattedJinjaCmd, "\n"), "\r\n")
-	}
+	// 	formattedJinjaCmd := "\n"
+	// 	indent := strings.Repeat(" ", 4)
+	// 	for _, jinjaLine := range jinjaLines {
+	// 		jinjaLineStr, ok := jinjaLine.(string)
+	// 		if !ok {
+	// 			return nil, fmt.Errorf("unable to convert [%#v] to string", jinjaLineStr)
+	// 		}
+	// 		formattedJinjaCmd += indent + jinjaLineStr + "\n"
+	// 	}
+	// 	cloudInitConfig.BootstrapRunCmd = strings.Trim(strings.Trim(formattedJinjaCmd, "\n"), "\r\n")
+	// }
 	cloudInitTemplate := template.New("cloud_init_script_template")
 
 	if cloudInitTemplate, err = cloudInitTemplate.Parse(cloudInitScriptTemplate); err != nil {
@@ -1504,7 +1509,7 @@ func MergeJinjaToCloudInitScript(cloudInitConfig CloudInitScriptInput, jinjaConf
 	mergedCloudInit := make(map[string]interface{})
 	for key, vcdVal := range vcdCloudInit {
 		jinjaVal, ok := jinja[key]
-		if !ok || key == "runcmd" {
+		if !ok {
 			mergedCloudInit[key] = vcdVal
 			continue
 		}
@@ -1534,7 +1539,9 @@ func MergeJinjaToCloudInitScript(cloudInitConfig CloudInitScriptInput, jinjaConf
 		"disable_root",
 		"preserve_hostname",
 		"hostname",
+		"network",
 		"final_message",
+		"manual_cache_clean",
 	} {
 		val, ok := mergedCloudInit[key]
 		if !ok {

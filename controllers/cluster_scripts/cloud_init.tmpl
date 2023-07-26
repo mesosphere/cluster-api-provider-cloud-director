@@ -1,67 +1,46 @@
 #cloud-config
-users:
-  - name: builder
-    groups: [ sudo ]
-    shell: /bin/bash
-    lock_passwd: false
-    plain_text_passwd: 'supersecretpassword1'
 write_files:
 - path: /root/ {{- if .ControlPlane -}} control_plane {{- else -}} node {{- end -}} .sh
   owner: root
   content: |
     #!/usr/bin/env bash
-    catch() {
-      vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_status $?"
-      ERROR_MESSAGE="$(date) $(caller): $BASH_COMMAND"
-      echo "$ERROR_MESSAGE" &>> /var/log/capvcd/customization/error.log
-      vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_failure_reason $ERROR_MESSAGE"
 
-      CLOUD_INIT_OUTPUT="Getting cloud-init output"
-      if [[ -f /var/log/cloud-init-output.log ]]
-      then
-        CLOUD_INIT_OUTPUT="$CLOUD_INIT_OUTPUT $(</var/log/cloud-init-output.log)"
-      fi
-      vmtoolsd --cmd "info-set guestinfo.post_customization_cloud_init_output $CLOUD_INIT_OUTPUT"
-    }
-    mkdir -p /var/log/capvcd/customization
-    trap 'catch $? $LINENO' ERR EXIT
-    set -eEx
+      # set network status
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status in_progress"
+      hostname "{{ .MachineName }}"
+      echo "::1         ipv6-localhost ipv6-loopback" >/etc/hosts
+      echo "127.0.0.1   localhost" >>/etc/hosts
+      echo "{{ .MachineName }}" >/etc/hostname
+      echo "127.0.0.1" `hostname` >>/etc/hosts
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status successful"
 
-    echo "$(date) Post Customization script execution in progress" &>> /var/log/capvcd/customization/status.log {{- if .ControlPlane }}
+      vmtoolsd --cmd "info-set guestinfo.metering.status in_progress"
+      vmtoolsd --cmd "info-set guestinfo.metering.status successful"
 
-    vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status in_progress"
-    echo 'net.ipv6.conf.all.disable_ipv6 = 1' >> /etc/sysctl.conf
-    echo 'net.ipv6.conf.default.disable_ipv6 = 1' >> /etc/sysctl.conf
-    echo 'net.ipv6.conf.lo.disable_ipv6 = 1' >> /etc/sysctl.conf
-    sudo sysctl -p
-    # also remove ipv6 localhost entry from /etc/hosts
-    sed -i 's/::1/127.0.0.1/g' /etc/hosts || true
-    vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status successful"
-    {{- end }}
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.proxy.setting.status in_progress"
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.proxy.setting.status successful"
 
-    vmtoolsd --cmd "info-set guestinfo.metering.status successful"
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.kubeinit.status in_progress"
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.kubeinit.status successful"
 
-    vmtoolsd --cmd "info-set {{ if .ControlPlane -}} guestinfo.postcustomization.kubeinit.status {{- else -}} guestinfo.postcustomization.kubeadm.node.join.status {{- end }} in_progress"
-    {{ .BootstrapRunCmd }}
-    if [[ ! -f /run/cluster-api/bootstrap-success.complete ]]
-    then
-      echo "file /run/cluster-api/bootstrap-success.complete not found" &>> /var/log/capvcd/customization/error.log
-      exit 1
-    fi
-    vmtoolsd --cmd "info-set {{ if .ControlPlane -}} guestinfo.postcustomization.kubeinit.status {{- else -}} guestinfo.postcustomization.kubeadm.node.join.status {{- end }} successful"
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.kubeadm.node.join.status in_progress"
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.kubeadm.node.join.status successful"
 
-    echo "$(date) post customization script execution completed" &>> /var/log/capvcd/customization/status.log
-    exit 0
+      vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_status 0"
+
+      vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_failure_reason custom_failure"
+
+      vmtoolsd --cmd "info-set guestinfo.post_customization_cloud_init_output custom_cloud_init_output"
+      exit 0
 runcmd:
-{{ if .ControlPlane }}
-- '[ ! -f /root/control_plane.sh ] && sudo reboot'
-- bash /root/control_plane.sh
-{{ else }}
-- '[ ! -f /root/node.sh ] && sudo reboot'
-- bash /root/node.sh
-{{ end }}
+- 'cloud-init clean --logs'
+- 'sudo cat /dev/null > /var/log/cloud-init-output.log'
 timezone: UTC
 disable_root: false
+disable_vmware_customization: true
 preserve_hostname: false
+network:
+  config: disabled
+manual_cache_clean: True
 hostname: "{{ .MachineName }}"
 final_message: "The system is ready after $UPTIME seconds"
