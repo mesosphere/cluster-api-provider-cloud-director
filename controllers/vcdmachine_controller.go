@@ -13,11 +13,12 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"sigs.k8s.io/yaml"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/go-logr/logr"
@@ -962,6 +963,12 @@ func (r *VCDMachineReconciler) reconcileVMNetworks(vdcManager *vcdsdk.VdcManager
 			return errors.Wrapf(err, "Error ensuring network [%s] is attached to vApp", ovdcNetwork)
 		}
 
+		desiredNetworkConnection := getNetworkConnection(connections, ovdcNetwork)
+		if desiredNetworkConnection.IPAddressAllocationMode == "POOL" {
+			desiredNetworkConnection.IPAddressAllocationMode = "DHCP"
+			desiredNetworkConnection.IPAddress = ""
+			desiredNetworkConnection.NeedsCustomization = true
+		}
 		desiredConnectionArray[index] = getNetworkConnection(connections, ovdcNetwork)
 	}
 
@@ -979,6 +986,7 @@ func (r *VCDMachineReconciler) reconcileVMNetworks(vdcManager *vcdsdk.VdcManager
 		}
 		// update vm.VM object for the rest of the flow, especially for getPrimaryNetwork function
 		vm.VM.NetworkConnectionSection = connections
+		// TODO: update vApp.VMs if they dont reconcile on the vAPP
 	}
 
 	return nil
