@@ -13,7 +13,7 @@ push-capvcd-image: docker-buildx-builder generate fmt vet vendor
 		--output=type=registry \
 		--build-arg VERSION=$(VERSION) \
 		--tag $(REGISTRY)/$(CAPVCD_IMG):$(VERSION) \
-		--file Dockerfile \
+		--file d2iq.Dockerfile \
 		.
 
 .PHONY: docker-buildx-builder
@@ -26,3 +26,8 @@ release-manifests: kustomize
 	mkdir -p $(MANIFEST_DIR)
 	cd config/manager && $(KUSTOMIZE) edit set image projects.registry.vmware.com/vmware-cloud-director/cluster-api-provider-cloud-director=$(REGISTRY)/$(CAPVCD_IMG):$(VERSION)
 	$(KUSTOMIZE) build config/default > $(MANIFEST_DIR)/infrastructure-components.yaml
+
+.PHONY: build-within-docker
+build-within-docker: vendor
+	mkdir -p /build/cluster-api-provider-cloud-director
+	CGO_ENABLED=0 go build -ldflags "-X github.com/vmware/$(CAPVCD_IMG)/version.Version=${VERSION}" -o /build/vcloud/cluster-api-provider-cloud-director main.go
