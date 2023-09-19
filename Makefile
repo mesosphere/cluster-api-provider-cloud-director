@@ -87,10 +87,6 @@ golangci-lint: $(GOLANGCI_LINT) ## Run golangci-lint against code.
 gosec: $(GOSEC) ## Run gosec against code.
 	$(GOSEC) -conf .gosec.json ./...
 
-build-within-docker: vendor
-	mkdir -p /build/cluster-api-provider-cloud-director
-	CGO_ENABLED=0 go build -ldflags "-X github.com/vmware/$(CAPVCD_IMG)/version.Version=${VERSION}" -o /build/vcloud/cluster-api-provider-cloud-director main.go
-
 .PHONY: shellcheck
 shellcheck: $(SHELLCHECK) ## Run shellcheck against code.
 	find . -name '*.*sh' -not -path '*/vendor/*' | xargs $(SHELLCHECK) --color
