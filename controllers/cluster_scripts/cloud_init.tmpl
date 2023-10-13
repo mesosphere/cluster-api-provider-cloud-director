@@ -3,83 +3,87 @@ users:
   - name: root
     lock_passwd: false
 write_files:
-# Due to a known issue with VMware Guest Customization, cloud-init believes every boot
-# is the first boot. This ensures that cloud-init does not remove SSH keys on a reboot.
-- path: /etc/cloud/cloud.cfg.d/cse.cfg
-  owner: root
-  content: |
-     ssh_deletekeys: false
-# The control_plane.sh script runs on the first control plane machine. The node.sh script
-# runs on every subsequent control plane machine, and every worker machine.
-- path: /root/ {{- if .ControlPlane -}} control_plane {{- else -}} node {{- end -}} .sh
+# On first boot, cloud-init writes all files defined in userdata. At the same time,
+# VMware Guest Customization configures networking, and reboots the machine when it is done.
+# Any files in /run are not preserved. We need cloud-init to fetch userdata and write the
+# files again. We clear the cloud-init cache, and reboot. Cloud-init thinks it is the
+# first boot, and fetches the userdata, and writes the files.
+- path: /root/replace-userdata-files.sh
   owner: root
   content: |
     #!/usr/bin/env bash
-    catch() {
-      vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_status $?"
-      ERROR_MESSAGE="$(date) $(caller): $BASH_COMMAND"
-      echo "$ERROR_MESSAGE" &>> /var/log/capvcd/customization/error.log
-      vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_failure_reason $ERROR_MESSAGE"
-
-      CLOUD_INIT_OUTPUT=""
-      if [[ -f /var/log/cloud-init-output.log ]]
-      then
-        CLOUD_INIT_OUTPUT=$(</var/log/cloud-init-output.log)
-      fi
-      vmtoolsd --cmd "info-set guestinfo.post_customization_cloud_init_output $CLOUD_INIT_OUTPUT"
+    function _log() {
+      echo "$(date -u +"%Y-%m-%d %H:%M:%S") $@" >> /var/log/capvcd/replace-userdata-files.log
     }
-    mkdir -p /var/log/capvcd/customization
-    trap 'catch $? $LINENO' ERR EXIT
-    set -eEx
 
-    echo "$(date) Post Customization script execution in progress" &>> /var/log/capvcd/customization/status.log {{- if .ControlPlane }}
+    mkdir -p /var/log/capvcd
 
-    VCLOUD_BASIC_AUTH_PATH=/root/vcloud-basic-auth.yaml
-    VCLOUD_CONFIGMAP_PATH=/root/vcloud-configmap.yaml
-    VCLOUD_CCM_PATH=/root/cloud-director-ccm.yaml
-    VCLOUD_CSI_CONFIGMAP_PATH=/root/vcloud-csi-configmap.yaml
-    CSI_DRIVER_PATH=/root/csi-driver.yaml
-    CSI_CONTROLLER_PATH=/root/csi-controller.yaml
-    CSI_NODE_PATH=/root/csi-node.yaml {{- end }}
-
-    vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status in_progress"
-    echo 'net.ipv6.conf.all.disable_ipv6 = 1' >> /etc/sysctl.conf
-    echo 'net.ipv6.conf.default.disable_ipv6 = 1' >> /etc/sysctl.conf
-    echo 'net.ipv6.conf.lo.disable_ipv6 = 1' >> /etc/sysctl.conf
-    sudo sysctl -p
-    # also remove ipv6 localhost entry from /etc/hosts
-    sed -i 's/::1/127.0.0.1/g' /etc/hosts || true
-    vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status successful"
-
-    # Our images do not ship the VCD metering service, but CAPVCD requires a successful status to finish bootstrapping.
-    vmtoolsd --cmd "info-set guestinfo.metering.status successful"
-
-    vmtoolsd --cmd "info-set {{ if .ControlPlane -}} guestinfo.postcustomization.kubeinit.status {{- else -}} guestinfo.postcustomization.kubeadm.node.join.status {{- end }} in_progress"
-    {
-{{ .BootstrapRunCmd }}
-    }
-    if [[ ! -f /run/cluster-api/bootstrap-success.complete ]]
-    then
-      echo "file /run/cluster-api/bootstrap-success.complete not found" &>> /var/log/capvcd/customization/error.log
-      exit 1
+    _log "Checking for kubeadm configuration file"
+    if [ -f /run/kubeadm/kubeadm.yaml ] || [ -f /run/kubeadm/kubeadm-join-config.yaml ]; then
+      _log "kubeadm configuration file found, exiting"
+      exit 0
     fi
-    vmtoolsd --cmd "info-set {{ if .ControlPlane -}} guestinfo.postcustomization.kubeinit.status {{- else -}} guestinfo.postcustomization.kubeadm.node.join.status {{- end }} successful"
+    _log "kubeadm configuration file not found, cleaning cloud-init cache and rebooting"
+    cloud-init clean
+    reboot
+- path: /root/bootstrap.sh
+  owner: root
+  content: |
+    #!/usr/bin/env bash
 
-    echo "$(date) post customization script execution completed" &>> /var/log/capvcd/customization/status.log
-    exit 0
+    mkdir -p /var/log/capvcd
+    (
+      # Prefix timestamp to commands in trace output.
+      PS4='$(date -u +"%Y-%m-%d %H:%M:%S")\011'
+      set -o xtrace
+
+      # Exit on the first error. Does not apply to commad lists, or pipelines.
+      set -o errexit
+
+      # Our images do not require any network customization,
+      # but CAPVCD requires a successful status to finish bootstrapping.
+      vmtoolsd --cmd "info-set guestinfo.postcustomization.networkconfiguration.status successful"
+
+      # Our images do not ship the VCD metering service,
+      # but CAPVCD requires a successful status to finish bootstrapping.
+      vmtoolsd --cmd "info-set guestinfo.metering.status successful"
+
+      vmtoolsd --cmd "info-set {{ if .ControlPlane -}} guestinfo.postcustomization.kubeinit.status {{- else -}} guestinfo.postcustomization.kubeadm.node.join.status {{- end }} in_progress"
+
+      # Run the preKubeadmCommands, and then kubeadm itself.
+      {{ .BootstrapRunCmd }}
+
+      # Kubeadm is the first command in a bash "list of commands," and its failure
+      # does not cause this subshell to exit. Therefore, we check the "sentinel" also created
+      # in the "list of commands," and exit if it is missing.
+      if [[ ! -f /run/cluster-api/bootstrap-success.complete ]]; then
+        echo "file /run/cluster-api/bootstrap-success.complete not found"
+        exit 1
+      fi
+
+      vmtoolsd --cmd "info-set {{ if .ControlPlane -}} guestinfo.postcustomization.kubeinit.status {{- else -}} guestinfo.postcustomization.kubeadm.node.join.status {{- end }} successful"
+
+      exit 0
+    ) &>> /var/log/capvcd/bootstrap.log
+    bootstrap_exit_code=$?
+
+    # Write the exit code to the VM metadata.
+    vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_status $bootstrap_exit_code"
+
+    # Use the last lines of the bootstrap log to give context about any failure.
+    TAIL_LOG="$(tail --lines=10 /var/log/capvcd/bootstrap.log)"
+    vmtoolsd --cmd "info-set guestinfo.post_customization_script_execution_failure_reason $TAIL_LOG"
+
+    # Write cloud-init output for additional context.
+    vmtoolsd --cmd "info-set guestinfo.post_customization_cloud_init_output $(</var/log/cloud-init-output.log)"
 runcmd:
-- 'cloud-init clean'
-{{ if .ControlPlane }}
-- '[ ! -f /root/control_plane.sh ] && sudo reboot'
-- '[ ! -f /run/kubeadm/kubeadm.yaml ] && sudo reboot'
-- bash /root/control_plane.sh
-{{ else }}
-- '[ ! -f /root/node.sh ] && sudo reboot'
-- '[ ! -f /run/kubeadm/kubeadm-join-config.yaml ] && sudo reboot'
-- bash /root/node.sh
-{{ end }}
+- bash /root/replace-userdata-files.sh
+- bash /root/bootstrap.sh
 timezone: UTC
 disable_root: false
+# Ensure we have an IPv4 address for localhost
+manage_etc_hosts: localhost
+# Ensure that cloud-init can override the hostname.
 preserve_hostname: false
 hostname: "{{ .MachineName }}"
 final_message: "The system is ready after $UPTIME seconds"
