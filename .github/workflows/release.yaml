@@ -57,7 +57,7 @@ jobs:
         # Also see note on make variables, above.
         run: |
           make release-manifests \
-            --makefile d2iq.Makefile
+            --makefile d2iq.Makefile \
             REGISTRY=${{ env.registry }} \
             CAPVCD_IMG=${{ env.repository }} \
             VERSION=${{ env.version }}
