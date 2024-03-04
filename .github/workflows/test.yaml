@@ -7,12 +7,22 @@ on:
     branches:
       - d2iq/*
 
+env:
+  CLUSTERCTL_VERSION: "v1.4.0"
+  KUBERNETES_VERSION: "v1.28.7"
+  CAPI_PROVIDERS_WAIT_TIMEOUT: "300"
+  CAPI_VERSION: "v1.4.0"
+  KUBEADM_VERSION: "v1.4.0"
+  CAPVCD_VERSION: "v1.1.0"
+  CLUSTER_TEMPLATE: "cluster-template-v1.27.5-tkgv2.4.0.yaml"
+
 jobs:
   test:
     name: Test
     runs-on: 
       - self-hosted
       - small
+      # - ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - name: Setup Go
@@ -20,5 +30,31 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true # cache go action in github actions cache store.
-      - name: make test
-        run: make test
+
+      - name: Setup clusterctl
+        run: |
+          GOARCH=$(go env GOARCH)
+          GOOS=$(go env GOOS)
+          curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/${{ env.CLUSTERCTL_VERSION }}/clusterctl-"${GOOS}"-"${GOARCH}" -o clusterctl
+          chmod ug+rx ./clusterctl
+
+      - name: Create KinD Cluster
+        uses: helm/kind-action@v1
+        with:
+          version: "v0.22.0"
+          node_image: "ghcr.io/mesosphere/kind-node:${{ env.KUBERNETES_VERSION }}"
+          kubectl_version: ${{ env.KUBERNETES_VERSION }}
+          cluster_name: kind
+  
+      - name: Install required CAPI Components
+        run: |
+          ./clusterctl version
+          ./clusterctl init --wait-providers --wait-provider-timeout ${{ env.CAPI_PROVIDERS_WAIT_TIMEOUT }} --core cluster-api:${{ env.CAPI_VERSION }} -b kubeadm:${{ env.KUBEADM_VERSION }} -c kubeadm:${{ env.KUBEADM_VERSION }} -i vcd:${{ env.CAPVCD_VERSION }}
+          kubectl get pods -A -o wide
+
+      - name: make test-e2e
+        run: |
+          GITROOT=$(git rev-parse --show-toplevel)
+          export TEMPLATE_FILE="${GITROOT}/templates/${{ env.CLUSTER_TEMPLATE }}"
+          export KUBECONFIG=~/.kube/config
+          make test-e2e

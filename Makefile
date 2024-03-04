@@ -37,6 +37,9 @@ GOLANGCI_LINT ?= bin/golangci-lint
 GOSEC ?= bin/gosec
 SHELLCHECK ?= bin/shellcheck
 
+KUBECONFIG ?= $(HOME)/.kube/config
+TEMPLATE_FILE ?= $(GITROOT)/templates/cluster-template.yaml
+
 TEST_PACKAGES := ./...
 
 .PHONY: all
@@ -141,6 +144,10 @@ test: manifests generate ## Run tests.
 	fetch_envtest_tools bin/testbin; \
 	setup_envtest_env "$(shell pwd)/bin/testbin"; \
 	go test $(TEST_PACKAGES) -coverprofile cover.out
+
+.PHONY: test-e2e
+test-e2e: manifests generate ## Run tests.
+	go test ./tests/e2e -coverprofile cover.out -args -PathToMngmntClusterKubecfg=${KUBECONFIG} -PathToWorkloadClusterCapiYaml=${TEMPLATE_FILE}
 
 .PHONY: manager
 manager: generate ## Build manager binary.
