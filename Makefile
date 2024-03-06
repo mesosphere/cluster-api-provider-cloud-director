@@ -153,7 +153,8 @@ run: manifests generate ## Run a controller from your host.
 
 .PHONY: docker-build-capvcd
 docker-build-capvcd: generate release-manifests build
-	docker build  \
+	docker buildx build  \
+		--builder capvcd \
 		--platform $(PLATFORM) \
 		--file Dockerfile \
 		--tag $(REGISTRY)/$(CAPVCD_IMG):$(VERSION) \

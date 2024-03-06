@@ -14,6 +14,7 @@ push-capvcd-image: docker-buildx-builder generate fmt vet vendor
 		--build-arg VERSION=$(VERSION) \
 		--tag $(REGISTRY)/$(CAPVCD_IMG):$(VERSION) \
 		--file Dockerfile \
+		--build-arg CAPVCD_BUILD_DIR=bin \
 		.
 
 .PHONY: docker-buildx-builder

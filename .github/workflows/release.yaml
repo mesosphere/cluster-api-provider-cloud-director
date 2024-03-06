@@ -6,12 +6,12 @@ on:
 
 # Because variables are not exported, they are not visible by child processes, e.g. make
 env:
-  registry: ghcr.io
-  registry_username: ${{ github.actor }}
-  registry_password: ${{ secrets.GITHUB_TOKEN }}
+  registry: docker.io
+  registry_username: kaiwalyarjoshi
+  registry_password: <FILLME>
   # The repository follows the naming convention of other Cluster API providers.
-  repository: mesosphere/cluster-api-vcd-controller
-  version: ${{ github.ref_name }}
+  repository: kaiwalyarjoshi/cluster-api-vcd-controller
+  version: v1.2.0-d2iq.beta.0
 
 jobs:
   release:
@@ -47,21 +47,21 @@ jobs:
         # See note on make variables, above.
         run: |
           make release-manifests \
-            --makefile d2iq.Makefile
+            --makefile d2iq.Makefile \
             REGISTRY=${{ env.registry }} \
             CAPVCD_IMG=${{ env.repository }} \
             VERSION=${{ env.version }}
-      - name: Create (draft) GitHub release
-        run: |
-          gh release create ${{ env.version }} \
-            --title ${{ env.version }} \
-            --draft
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload GitHub release artifacts
-        run: |
-          gh release upload ${{ env.version }} \
-            metadata.yaml \
-            templates/infrastructure-components.yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Create (draft) GitHub release
+      #   run: |
+      #     gh release create ${{ env.version }} \
+      #       --title ${{ env.version }} \
+      #       --draft
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Upload GitHub release artifacts
+      #   run: |
+      #     gh release upload ${{ env.version }} \
+      #       metadata.yaml \
+      #       templates/infrastructure-components.yaml
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
