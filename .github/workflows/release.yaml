@@ -2,7 +2,7 @@ name: Release
 on:
   push:
     tags:
-      - v.*-d2iq.*
+      - 'v*-d2iq.*'
 
 # Because variables are not exported, they are not visible by child processes, e.g. make
 env:
